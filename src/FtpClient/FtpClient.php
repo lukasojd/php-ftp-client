@@ -360,23 +360,28 @@ class FtpClient implements Countable
      * @param  bool   $recursive
      * @return array
      */
-    public function mkdir($directory, $recursive = false)
+    public function mkdir($directory, $recursive = false, $permission = null)
     {
         if (!$recursive or $this->isDir($directory)) {
             return $this->ftp->mkdir($directory);
         }
 
         $result = false;
-        $pwd    = $this->ftp->pwd();
-        $parts  = explode('/', $directory);
+        $pwd = $this->ftp->pwd();
+        $parts = explode('/', $directory);
 
         foreach ($parts as $part) {
             if ($part == '') {
                 continue;
-	    	}
+            }
 
             if (!@$this->ftp->chdir($part)) {
                 $result = $this->ftp->mkdir($part);
+
+                if($permission !== null) {
+                    $this->ftp->chmod($permission, $part);
+                }
+
                 $this->ftp->chdir($part);
             }
         }
@@ -565,16 +570,18 @@ class FtpClient implements Countable
      */
     public function putFromString($remote_file, $content)
     {
-        $handle = fopen('php://temp', 'w');
+        $handle = fopen('php://temp', 'r+');
 
         fwrite($handle, $content);
         rewind($handle);
 
         if ($this->ftp->fput($remote_file, $handle, FTP_BINARY)) {
+            fclose($handle);
             return $this;
         }
 
-        throw new FtpException('Unable to put the file "'.$remote_file.'"');
+        fclose($handle);
+        throw new FtpException('Unable to put the file "' . $remote_file . '"');
     }
 
     /**
@@ -584,9 +591,12 @@ class FtpClient implements Countable
      * @return FtpClient
      * @throws FtpException When the transfer fails
      */
-    public function putFromPath($local_file)
+    public function putFromPath($local_file, $remote_file = null)
     {
-        $remote_file = basename($local_file);
+        if ($remote_file === null) {
+            $remote_file = basename($local_file);
+        }
+
         $handle      = fopen($local_file, 'r');
 
         if ($this->ftp->fput($remote_file, $handle, FTP_BINARY)) {
@@ -873,5 +883,23 @@ class FtpClient implements Countable
         $this->ftp = $wrapper;
 
         return $this;
+    }
+
+    /**
+     * @param string $folder
+     * @return bool
+     */
+    public function folderExist($folder)
+    {
+        $pwd = $this->ftp->pwd();
+
+        $isFolder = true;
+        if ($this->ftp->chdir($folder) === false) {
+            $isFolder = false;
+        }
+
+        $this->ftp->chdir($pwd);
+
+        return $isFolder;
     }
 }
